@@ -174,24 +174,31 @@ function resolvePath(): string {
     : `./${path}`;
 }
 
-const db = new DatabaseSync(resolvePath());
-db.exec("PRAGMA journal_mode = WAL;");
-db.exec("PRAGMA foreign_keys = ON;");
-db.exec("PRAGMA busy_timeout = 5000;");
+let dbInstance: DatabaseSync | null = null;
 
-/**
- * Creates the AppSetting table if it is missing. The full schema is applied
- * by `npm run db:init`; this lazy fallback keeps the data layer usable even
- * if a caller only needs settings. Safe to run on every process start.
- */
-function ensureSchema(): void {
-  db.exec(`CREATE TABLE IF NOT EXISTS "AppSetting" (
+function openDatabase(): DatabaseSync {
+  if (dbInstance) return dbInstance;
+
+  const instance = new DatabaseSync(resolvePath());
+  instance.exec("PRAGMA journal_mode = WAL;");
+  instance.exec("PRAGMA foreign_keys = ON;");
+  instance.exec("PRAGMA busy_timeout = 5000;");
+  instance.exec(`CREATE TABLE IF NOT EXISTS "AppSetting" (
     "key" TEXT NOT NULL PRIMARY KEY,
     "value" TEXT NOT NULL
   );`);
+
+  dbInstance = instance;
+  return instance;
 }
 
-ensureSchema();
+const db = new Proxy({} as DatabaseSync, {
+  get(_target, property) {
+    const instance = openDatabase();
+    const value = Reflect.get(instance, property);
+    return typeof value === "function" ? value.bind(instance) : value;
+  },
+});
 
 // ---------- преобразование значений ----------
 
