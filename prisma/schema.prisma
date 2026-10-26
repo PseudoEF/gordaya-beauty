@@ -1,0 +1,92 @@
+// Prisma Client is not used at runtime: its native engine is built against
+// glibc and does not load on Android/Bionic. This file documents the schema;
+// actual data access goes through src/lib/prisma.ts, a small layer over the
+// built-in node:sqlite module. Migrations are the raw SQL files under
+// prisma/migrations/ and are applied by `npm run db:init`.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A bookable procedure, e.g. manicure or lash extensions.
+// durationMin/priceFrom are shown to clients and editable by the admin —
+// they no longer drive slot length, since the master works alone and her
+// calendar of free windows is shared across every service (see Slot).
+model Service {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  nameUa        String
+  nameRu        String
+  descriptionUa String?
+  descriptionRu String?
+  durationMin   Int         @default(180)
+  priceFrom     Int?
+  noteUa        String?
+  noteRu        String?
+  active        Boolean     @default(true)
+  sortOrder     Int         @default(0)
+  priceItems    PriceItem[]
+  bookings      Booking[]
+  createdAt     DateTime    @default(now())
+}
+
+// One line of an itemized price list, e.g. "Манікюр з покриттям — 650 грн"
+// or, as a surcharge, "Френч — +100 грн". Shown on the service card in the
+// order set by sortOrder, editable by the admin.
+model PriceItem {
+  id          String   @id @default(cuid())
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId   String
+  labelUa     String
+  labelRu     String
+  amount      Int
+  isSurcharge Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([serviceId, sortOrder])
+}
+
+// Slot.status: "AVAILABLE" | "BOOKED" | "BLOCKED"
+// A single window of the master's time, created manually by the admin.
+// Not tied to a service — she does one procedure at a time, so booking a
+// slot for any service removes it from availability for every service.
+model Slot {
+  id        String   @id @default(cuid())
+  startsAt  DateTime
+  endsAt    DateTime
+  status    String   @default("AVAILABLE")
+  booking   Booking?
+  createdAt DateTime @default(now())
+
+  @@index([startsAt])
+}
+
+// Booking.status: "CONFIRMED" | "CANCELLED"
+// A client's reservation of a specific slot, for a specific service.
+model Booking {
+  id         String   @id @default(cuid())
+  slot       Slot     @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  slotId     String   @unique
+  service    Service  @relation(fields: [serviceId], references: [id])
+  serviceId  String
+  clientName String
+  phone      String
+  telegram   String?
+  instagram  String?
+  comment    String?
+  status     String   @default("CONFIRMED")
+  createdAt  DateTime @default(now())
+}
+
+// Key/value application settings. This table postdates the initial migration
+// and is created idempotently by `npm run db:init` and by src/lib/prisma.ts,
+// so a fresh database is usable immediately.
+model AppSetting {
+  key   String @id
+  value String
+}
